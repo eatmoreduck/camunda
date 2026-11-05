@@ -310,6 +310,41 @@ public final class EngineErrorHandlingTest {
   }
 
   @Test
+  public void shouldAssignProcessInstanceOrdinalToErrorRecordOnBan() {
+    // given
+    streamProcessor =
+        streams.startStreamProcessor(
+            STREAM_NAME,
+            DefaultZeebeDbFactory.defaultFactory(),
+            (processingContext) -> {
+              processingState = processingContext.getProcessingState();
+              keyGenerator = processingState.getKeyGenerator();
+              return TypedRecordProcessors.processors()
+                  .onCommand(
+                      ValueType.PROCESS_INSTANCE,
+                      ProcessInstanceIntent.ACTIVATE_ELEMENT,
+                      new ErrorProneProcessor());
+            });
+
+    streams
+        .newRecord(STREAM_NAME)
+        .event(Records.processInstance(1).setStorageOrdinal(7))
+        .recordType(RecordType.COMMAND)
+        .intent(ProcessInstanceIntent.ACTIVATE_ELEMENT)
+        .write();
+
+    // when
+    waitForRecordWhichSatisfies(e -> Records.isEvent(e, ValueType.ERROR, ErrorIntent.CREATED));
+
+    // then
+    final ErrorRecord errorRecord =
+        new RecordStream(streams.events(STREAM_NAME)).onlyErrorRecords().getFirst().getValue();
+
+    assertThat(errorRecord.getProcessInstanceKey()).isEqualTo(1);
+    assertThat(errorRecord.getStorageOrdinal()).isEqualTo(7);
+  }
+
+  @Test
   public void shouldWriteErrorEventWithNoMessage() {
     // given
     streamProcessor =
